@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -28,6 +30,29 @@ func main() {
 	proxy.Director = func(r *http.Request) {
 		oldDirector(r)
 		r.Host = wikiUrl.Host
+	}
+
+	proxy.ModifyResponse = func(r *http.Response) error {
+		// if the response isnt an html page do nth
+		if !strings.Contains(r.Header.Get("Content-Type"), "text/html") {
+			return nil
+		}
+
+		// read body
+		html, err := io.ReadAll(r.Body)
+		if err != nil {
+			return err
+		}
+		r.Body.Close()
+
+		// replace wikipedia.org to m-wikipedia.org
+		newBody := strings.ReplaceAll(string(html), "wikipedia.org", "m-wikipedia.org")
+
+		// set new body
+		r.Body = io.NopCloser(strings.NewReader(newBody))
+		r.Header.Set("Content-Length", fmt.Sprint(len(newBody)))
+
+		return nil
 	}
 
 	// handle proxy errors
