@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 )
 
 const (
@@ -11,18 +13,30 @@ const (
 )
 
 func main() {
-	fmt.Println("setup  done!!")
+	// parse url becouse NewSingleHostReverseProxy need *url.URL
+	wikiUrl, err := url.Parse("https://wikipedia.org")
+	if err != nil {
+		log.Fatalln("error parsing wikipedia url: ", err)
+	}
+
+	// create a proxy
+	proxy := httputil.NewSingleHostReverseProxy(wikiUrl)
+
+	// handle proxy errors
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("proxy error: %v", err)
+		http.Error(w, "proxy error", http.StatusBadRequest)
+	}
 
 	// catch all routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(r.URL)
-
-		w.Write([]byte("Hellooo"))
+		fmt.Println("requesting url: https://wikipedia.org", r.URL.Path)
+		proxy.ServeHTTP(w, r)
 	})
 
+	// run server
 	fmt.Printf("server is running on port %s\n", serverPort)
-
-	err := http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil)
+	err = http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil)
 	if err != nil {
 		log.Fatalln("server error: ", err)
 	}
