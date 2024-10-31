@@ -22,6 +22,14 @@ func main() {
 	// create a proxy
 	proxy := httputil.NewSingleHostReverseProxy(wikiUrl)
 
+	// modify headers
+	// set host to wikipedia instead of localhost:3430
+	oldDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		oldDirector(r)
+		r.Host = wikiUrl.Host
+	}
+
 	// handle proxy errors
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("proxy error: %v", err)
