@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -15,65 +16,71 @@ const (
 )
 
 func main() {
-	// parse url becouse NewSingleHostReverseProxy need *url.URL
-	wikiUrl, err := url.Parse("https://wikipedia.org")
+	// Parse the Wikipedia URL
+	wikiUrl, err := url.Parse("https://www.wikipedia.org")
 	if err != nil {
-		log.Fatalln("error parsing wikipedia url: ", err)
+		log.Fatalln("error parsing wikipedia url:", err)
 	}
 
-	// create a proxy
+	// Create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(wikiUrl)
 
-	// modify headers
-	// set host to wikipedia instead of localhost:3430
+	// Preserve the original director and modify headers
 	oldDirector := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		oldDirector(r)
 		r.Host = wikiUrl.Host
+		// Ensure proper headers for mobile site
+		r.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1")
 	}
 
+	// Modify response to replace URLs
 	proxy.ModifyResponse = func(r *http.Response) error {
-		// if the response isnt an html page do nth
-		if !strings.Contains(r.Header.Get("Content-Type"), "text/html") {
+		// Check if response is HTML
+		contentType := r.Header.Get("Content-Type")
+		if !strings.Contains(strings.ToLower(contentType), "text/html") {
 			return nil
 		}
 
-		// read body
-		html, err := io.ReadAll(r.Body)
+		// Read body
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			return err
+			return fmt.Errorf("error reading response body: %v", err)
 		}
 		r.Body.Close()
 
-		// replace wikipedia.org to m-wikipedia.org
-		newBody := strings.ReplaceAll(string(html), "wikipedia.org", "m-wikipedia.org")
-		log.Println(html)
-		log.Println(string(html))
-		log.Println(newBody)
-		// set new body
-		r.Body = io.NopCloser(strings.NewReader(newBody))
-		r.Header.Set("Content-Length", fmt.Sprint(len(newBody)))
-		r.Header.Set("Content-Type", "text/html")
+		// Replace all variations of Wikipedia URLs
+		newBody := strings.ReplaceAll(string(body), "wikipedia", "m-wikipedia")
+
+		// Create new body
+		bodyBytes := []byte(newBody)
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		r.ContentLength = int64(len(bodyBytes))
+		r.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
+
+		// Ensure proper content type
+		if !strings.Contains(contentType, "charset") {
+			r.Header.Set("Content-Type", "text/html; charset=utf-8")
+		}
 
 		return nil
 	}
 
-	// handle proxy errors
+	// Handle proxy errors
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("proxy error: %v", err)
-		http.Error(w, "proxy error", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
 	}
 
-	// catch all routes
+	// Handle all routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("requesting url: https://wikipedia.org", r.URL.Path)
+		log.Printf("Proxying request: %s%s", wikiUrl.String(), r.URL.Path)
 		proxy.ServeHTTP(w, r)
 	})
 
-	// run server
-	fmt.Printf("server is running on port %s\n", serverPort)
-	err = http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil)
-	if err != nil {
-		log.Fatalln("server error: ", err)
+	// Start server
+	log.Printf("Server running on port %s\n", serverPort)
+	if err := http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil); err != nil {
+		log.Fatalln("server error:", err)
 	}
 }
