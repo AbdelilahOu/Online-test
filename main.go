@@ -46,8 +46,10 @@ func main() {
 		r.Body.Close()
 
 		// replace wikipedia.org to m-wikipedia.org
-		newBody := strings.ReplaceAll(string(html), "wiki", "m-wikipedia.org")
-
+		newBody := strings.ReplaceAll(string(html), "wikipedia.org", "m-wikipedia.org")
+		log.Println(html)
+		log.Println(string(html))
+		log.Println(newBody)
 		// set new body
 		r.Body = io.NopCloser(strings.NewReader(newBody))
 		r.Header.Set("Content-Length", fmt.Sprint(len(newBody)))
