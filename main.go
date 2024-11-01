@@ -17,7 +17,7 @@ const (
 
 func main() {
 	// Parse the Wikipedia URL
-	wikiUrl, err := url.Parse("https://wikipedia.org")
+	wikiUrl, err := url.Parse("https://www.wikipedia.org")
 	if err != nil {
 		log.Fatalln("error parsing wikipedia url:", err)
 	}
