@@ -17,7 +17,7 @@ const (
 
 func main() {
 	// Parse the Wikipedia URL
-	wikiUrl, err := url.Parse("https://www.wikipedia.org")
+	wikiUrl, err := url.Parse("https://wikipedia.org")
 	if err != nil {
 		log.Fatalln("error parsing wikipedia url:", err)
 	}
@@ -30,12 +30,41 @@ func main() {
 	proxy.Director = func(r *http.Request) {
 		oldDirector(r)
 		r.Host = wikiUrl.Host
-		// Ensure proper headers for mobile site
-		r.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1")
+		// Add headers to ensure proper encoding
+		r.Header.Set("Accept-Encoding", "identity")
+		r.Header.Set("Accept-Charset", "utf-8")
 	}
 
-	// Modify response to replace URLs
+	// Modify response to replace URLs and handle redirects
 	proxy.ModifyResponse = func(r *http.Response) error {
+		// Handle redirects
+		if r.StatusCode == 301 || r.StatusCode == 302 || r.StatusCode == 307 || r.StatusCode == 308 {
+			location := r.Header.Get("Location")
+			fmt.Println(r)
+			if location != "" {
+				fmt.Println(location)
+				body, err := fetchRedirectLocation(location)
+				if err != nil {
+					return err
+				}
+				newBody := processHtml(string(body))
+				r.StatusCode = 200
+				r.Status = "200 OK"
+				r.Header.Del("Location")
+				r.Body = io.NopCloser(bytes.NewReader([]byte(newBody)))
+				r.ContentLength = int64(len(newBody))
+				r.Header.Set("Content-Length", fmt.Sprint(len(newBody)))
+
+				// Ensure proper content type with UTF-8 charset
+				contentType := r.Header.Get("Content-Type")
+				if !strings.Contains(contentType, "charset") {
+					r.Header.Set("Content-Type", "text/html; charset=utf-8")
+				}
+
+				return nil
+			}
+		}
+
 		// Check if response is HTML
 		contentType := r.Header.Get("Content-Type")
 		if !strings.Contains(strings.ToLower(contentType), "text/html") {
@@ -49,16 +78,16 @@ func main() {
 		}
 		r.Body.Close()
 
-		// Replace all variations of Wikipedia URLs
-		newBody := strings.ReplaceAll(string(body), "wikipedia", "m-wikipedia")
+		// Convert body to UTF-8 if needed
+		// The body should already be in UTF-8 since we requested it with Accept-Charset
+		bodyStr := processHtml(string(body))
 
 		// Create new body
-		bodyBytes := []byte(newBody)
+		bodyBytes := []byte(bodyStr)
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		r.ContentLength = int64(len(bodyBytes))
 		r.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
-
-		// Ensure proper content type
+		// Ensure proper content type with UTF-8 charset
 		if !strings.Contains(contentType, "charset") {
 			r.Header.Set("Content-Type", "text/html; charset=utf-8")
 		}
@@ -83,4 +112,86 @@ func main() {
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil); err != nil {
 		log.Fatalln("server error:", err)
 	}
+}
+
+func fetchRedirectLocation(url string) ([]byte, error) {
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Create request
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	// Add headers
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Accept-Charset", "utf-8")
+	req.Header.Set("Accept", "text/html")
+
+	// Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching content: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	return body, nil
+}
+
+func processHtml(html string) string {
+	// Replace all variations of Wikipedia URLs
+	replacements := map[string]string{
+		"//wikipedia.org":           "//m-wikipedia.org",
+		"//www.wikipedia.org":       "//www.m-wikipedia.org",
+		"//en.wikipedia.org":        "//en.m-wikipedia.org",
+		"https://wikipedia.org":     "https://m-wikipedia.org",
+		"https://www.wikipedia.org": "https://www.m-wikipedia.org",
+		"https://en.wikipedia.org":  "https://en.m-wikipedia.org",
+	}
+
+	newBody := html
+	for old, new := range replacements {
+		newBody = strings.ReplaceAll(newBody, old, new)
+	}
+
+	newBody = strings.Replace(
+		newBody,
+		"</body>",
+		`
+			<script>
+				document.addEventListener('DOMContentLoaded', function () {
+					// link effect
+					const links = document.querySelectorAll('a');
+					links.forEach((link) => {
+						link.style.transition = 'all 0.3s ease';
+						link.addEventListener('mouseenter', () => {
+							link.style.backgroundColor = '#ffeb3b';
+							link.style.textDecoration = 'none';
+							link.style.borderRadius = '3px';
+							link.style.border = '1px solid orange';
+							link.style.padding = '0 4px';
+						});
+						link.addEventListener('mouseleave', () => {
+							link.style.backgroundColor = 'transparent';
+							link.style.padding = '0';
+							link.style.border = '';
+						});
+					});
+				});
+			</script>
+			</body>
+			`,
+		1,
+	)
+	return newBody
 }
