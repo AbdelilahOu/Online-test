@@ -40,9 +40,7 @@ func main() {
 		// Handle redirects
 		if r.StatusCode == 301 || r.StatusCode == 302 || r.StatusCode == 307 || r.StatusCode == 308 {
 			location := r.Header.Get("Location")
-			fmt.Println(r)
 			if location != "" {
-				fmt.Println(location)
 				body, err := fetchRedirectLocation(location)
 				if err != nil {
 					return err
@@ -190,7 +188,7 @@ func processHtml(html string) string {
 				});
 			</script>
 			</body>
-			`,
+		`,
 		1,
 	)
 	return newBody
