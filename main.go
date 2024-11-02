@@ -47,14 +47,14 @@ func main() {
 		if slices.Contains(redirectStatusCodes, r.StatusCode) {
 			location := r.Header.Get("Location")
 			if location != "" {
-				body, err := fetchRedirectLocation(location)
+				body, headers, err := fetchRedirectLocation(location)
 				if err != nil {
 					return err
 				}
 				newBody := processHtml(string(body))
 				r.StatusCode = 200
 				r.Status = "200 OK"
-				r.Header.Del("Location")
+				r.Header = headers
 				r.Body = io.NopCloser(bytes.NewReader([]byte(newBody)))
 				r.ContentLength = int64(len(newBody))
 				r.Header.Set("Content-Length", fmt.Sprint(len(newBody)))
@@ -71,24 +71,25 @@ func main() {
 
 		// Check if response is HTML
 		contentType := r.Header.Get("Content-Type")
-		if strings.Contains(strings.ToLower(contentType), "text/html") {
-			// Read body
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				return fmt.Errorf("error reading response body: %v", err)
-			}
-			r.Body.Close()
+		if !strings.Contains(strings.ToLower(contentType), "text/html") {
+			return nil
+		}
+		// Read body
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return fmt.Errorf("error reading response body: %v", err)
+		}
+		r.Body.Close()
 
-			bodyStr := processHtml(string(body))
+		bodyStr := processHtml(string(body))
 
-			// Create new body
-			bodyBytes := []byte(bodyStr)
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-			r.ContentLength = int64(len(bodyBytes))
-			r.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
-			if !strings.Contains(contentType, "charset") {
-				r.Header.Set("Content-Type", "text/html; charset=utf-8")
-			}
+		// Create new body
+		bodyBytes := []byte(bodyStr)
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		r.ContentLength = int64(len(bodyBytes))
+		r.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
+		if !strings.Contains(contentType, "charset") {
+			r.Header.Set("Content-Type", "text/html; charset=utf-8")
 		}
 
 		return nil
@@ -113,29 +114,29 @@ func main() {
 	}
 }
 
-func fetchRedirectLocation(url string) ([]byte, error) {
+func fetchRedirectLocation(url string) ([]byte, http.Header, error) {
 	log.Println("Redirected to :", url)
 	client := &http.Client{}
 
 	// Create request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, http.Header{}, fmt.Errorf("error creating request: %v", err)
 	}
 
 	// Send request
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching content: %v", err)
+		return nil, http.Header{}, fmt.Errorf("error fetching content: %v", err)
 	}
 	defer resp.Body.Close()
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %v", err)
+		return nil, http.Header{}, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	return body, nil
+	return body, resp.Header, nil
 }
 
 func processHtml(html string) string {
