@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/charmbracelet/log"
 )
 
 const (
@@ -21,29 +22,29 @@ var (
 )
 
 func main() {
-	// Parse the Wikipedia URL
+	// parse the Wikipedia URL
 	wikiUrl, err := url.Parse("https://wikipedia.org")
 	if err != nil {
-		log.Fatalln("error parsing wikipedia url:", err)
+		log.Fatal("error parsing wikipedia url:", err)
 	}
 
-	// Create reverse proxy
+	// create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(wikiUrl)
 
-	// Preserve the original director and modify headers
+	// preserve the original director and modify headers
 	oldDirector := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		oldDirector(r)
 		r.URL.Scheme = wikiUrl.Scheme
 		r.Host = wikiUrl.Host
-		// Add headers to ensure proper encoding
+		// add headers to ensure proper encoding
 		r.Header.Set("Accept-Encoding", "identity")
 		r.Header.Set("Accept-Charset", "utf-8")
 	}
 
-	// Modify response to replace URLs and handle redirects
+	// modify response to replace URLs and handle redirects
 	proxy.ModifyResponse = func(r *http.Response) error {
-		// Handle redirects
+		// handle redirects
 		if slices.Contains(redirectStatusCodes, r.StatusCode) {
 			location := r.Header.Get("Location")
 			if location != "" {
@@ -59,7 +60,7 @@ func main() {
 				r.ContentLength = int64(len(newBody))
 				r.Header.Set("Content-Length", fmt.Sprint(len(newBody)))
 
-				// Ensure proper content type with UTF-8 charset
+				// ensure proper content type with UTF-8 charset
 				contentType := r.Header.Get("Content-Type")
 				if !strings.Contains(contentType, "charset") {
 					r.Header.Set("Content-Type", "text/html; charset=utf-8")
@@ -69,12 +70,12 @@ func main() {
 			}
 		}
 
-		// Check if response is HTML
+		// check if response is HTML
 		contentType := r.Header.Get("Content-Type")
 		if !strings.Contains(strings.ToLower(contentType), "text/html") {
 			return nil
 		}
-		// Read body
+		// read body
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			return fmt.Errorf("error reading response body: %v", err)
@@ -83,7 +84,7 @@ func main() {
 
 		bodyStr := processHtml(string(body))
 
-		// Create new body
+		// create new body
 		bodyBytes := []byte(bodyStr)
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		r.ContentLength = int64(len(bodyBytes))
@@ -95,42 +96,42 @@ func main() {
 		return nil
 	}
 
-	// Handle proxy errors
+	// handle proxy errors
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf("proxy error: %v", err)
+		log.Errorf("proxy error: %v", err)
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
 	}
 
-	// Handle all routes
+	// handle all routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Proxying request: %s%s", wikiUrl.String(), r.URL.Path)
+		log.Infof("Proxying request: %s%s", wikiUrl.String(), r.URL.Path)
 		proxy.ServeHTTP(w, r)
 	})
 
-	// Start server
-	log.Printf("Server running on port %s\n", serverPort)
+	// start server
+	log.Infof("Server running on port %s\n", serverPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil); err != nil {
-		log.Fatalln("server error:", err)
+		log.Info("server error:", err)
 	}
 }
 
 func fetchRedirectLocation(url string) ([]byte, http.Header, error) {
-	log.Println("Redirected to :", url)
+	log.Info("Redirected to :", url)
 	client := &http.Client{}
 
-	// Create request
+	// create request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, http.Header{}, fmt.Errorf("error creating request: %v", err)
 	}
 
-	// Send request
+	// send request
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, http.Header{}, fmt.Errorf("error fetching content: %v", err)
 	}
 	defer resp.Body.Close()
-	// Read the response body
+	// read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, http.Header{}, fmt.Errorf("error reading response body: %v", err)
@@ -140,7 +141,7 @@ func fetchRedirectLocation(url string) ([]byte, http.Header, error) {
 }
 
 func processHtml(html string) string {
-	// Replace all variations of Wikipedia URLs
+	// replace all variations of Wikipedia URLs
 	replacements := map[string]string{
 		".wikipedia.org": ".m-wikipedia.org",
 	}
