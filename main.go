@@ -71,26 +71,24 @@ func main() {
 
 		// Check if response is HTML
 		contentType := r.Header.Get("Content-Type")
-		if !strings.Contains(strings.ToLower(contentType), "text/html") {
-			return nil
-		}
+		if strings.Contains(strings.ToLower(contentType), "text/html") {
+			// Read body
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				return fmt.Errorf("error reading response body: %v", err)
+			}
+			r.Body.Close()
 
-		// Read body
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			return fmt.Errorf("error reading response body: %v", err)
-		}
-		r.Body.Close()
+			bodyStr := processHtml(string(body))
 
-		bodyStr := processHtml(string(body))
-
-		// Create new body
-		bodyBytes := []byte(bodyStr)
-		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		r.ContentLength = int64(len(bodyBytes))
-		r.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
-		if !strings.Contains(contentType, "charset") {
-			r.Header.Set("Content-Type", "text/html; charset=utf-8")
+			// Create new body
+			bodyBytes := []byte(bodyStr)
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			r.ContentLength = int64(len(bodyBytes))
+			r.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
+			if !strings.Contains(contentType, "charset") {
+				r.Header.Set("Content-Type", "text/html; charset=utf-8")
+			}
 		}
 
 		return nil
@@ -116,7 +114,7 @@ func main() {
 }
 
 func fetchRedirectLocation(url string) ([]byte, error) {
-	fmt.Println("Redirected to :", url)
+	log.Println("Redirected to :", url)
 	client := &http.Client{}
 
 	// Create request
