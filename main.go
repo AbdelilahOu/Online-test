@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -142,14 +143,9 @@ func fetchRedirectLocation(url string) ([]byte, http.Header, error) {
 
 func processHtml(html string) string {
 	// replace all variations of Wikipedia URLs
-	replacements := map[string]string{
-		".wikipedia.org": ".m-wikipedia.org",
-	}
-
-	newBody := html
-	for old, new := range replacements {
-		newBody = strings.ReplaceAll(newBody, old, new)
-	}
+	// Use regex to specifically target href attributes
+	re := regexp.MustCompile(`href="https?://([^.]+\.)?wikipedia\.org([^"]*)"`)
+	newBody := re.ReplaceAllString(html, `href="https://$1m-wikipedia.org$2"`)
 
 	newBody = strings.Replace(
 		newBody,
