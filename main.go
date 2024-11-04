@@ -16,6 +16,7 @@ import (
 
 const (
 	serverPort = "3430"
+	wikiUrl    = "https://wikipedia.org"
 )
 
 var (
@@ -24,11 +25,27 @@ var (
 
 func main() {
 	// parse the Wikipedia URL
-	wikiUrl, err := url.Parse("https://wikipedia.org")
+	parsedWikiUrl, err := url.Parse(wikiUrl)
 	if err != nil {
 		log.Fatal("error parsing wikipedia url:", err)
 	}
 
+	proxy := createNewProxy(parsedWikiUrl)
+
+	// handle all routes
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Infof("Proxying request: %s%s", wikiUrl, r.URL.Path)
+		proxy.ServeHTTP(w, r)
+	})
+
+	// start server
+	log.Infof("Server running on port %s\n", serverPort)
+	if err := http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil); err != nil {
+		log.Info("server error:", err)
+	}
+}
+
+func createNewProxy(wikiUrl *url.URL) *httputil.ReverseProxy {
 	// create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(wikiUrl)
 
@@ -103,17 +120,8 @@ func main() {
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
 	}
 
-	// handle all routes
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Infof("Proxying request: %s%s", wikiUrl.String(), r.URL.Path)
-		proxy.ServeHTTP(w, r)
-	})
+	return proxy
 
-	// start server
-	log.Infof("Server running on port %s\n", serverPort)
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", serverPort), nil); err != nil {
-		log.Info("server error:", err)
-	}
 }
 
 func fetchRedirectLocation(url string) ([]byte, http.Header, error) {
